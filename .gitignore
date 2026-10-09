@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+# usecase_gen: embedding cache and per-run logs are disposable; the used-triples ledger is not.
+.usecase_gen/cache/
+.usecase_gen/runs/
