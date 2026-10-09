@@ -1,0 +1,100 @@
+# Taxonomy for usecase_gen.
+# Every generated use case = one verb x one domain x one context.
+# Domains double as the categories (section headings) in each exported volume.
+# Verbs must be single imperative words: generated sentences are required to start with them.
+
+verbs:
+  - Draft
+  - Summarize
+  - Debug
+  - Analyze
+  - Plan
+  - Translate
+  - Compare
+  - Explain
+  - Outline
+  - Review
+  - Design
+  - Audit
+  - Refactor
+  - Brainstorm
+  - Prioritize
+  - Estimate
+  - Rewrite
+  - Extract
+  - Classify
+  - Forecast
+  - Prepare
+  - Map
+  - Critique
+  - Simplify
+  - Convert
+  - Validate
+  - Document
+  - Organize
+  - Benchmark
+  - Troubleshoot
+
+domains:
+  - Software Engineering
+  - Data and Analytics
+  - Marketing
+  - Sales
+  - Customer Support
+  - Finance and Accounting
+  - Legal and Compliance
+  - Healthcare
+  - Education
+  - Human Resources
+  - Product Management
+  - Design and UX
+  - Operations and Logistics
+  - Real Estate
+  - Manufacturing
+  - Retail and E-commerce
+  - Hospitality and Travel
+  - Nonprofits and Fundraising
+  - Government and Public Policy
+  - Scientific Research
+  - Journalism and Media
+  - Creative Writing
+  - Personal Finance
+  - Health and Fitness
+  - Parenting and Family
+  - Agriculture
+  - Energy and Climate
+  - Construction
+  - Cybersecurity
+  - Gaming
+
+contexts:
+  - for a solo founder with no budget
+  - under a same-day deadline
+  - for a non-technical audience
+  - for a team of fewer than ten people
+  - during a crisis or outage
+  - for a first-time manager
+  - using only a messy spreadsheet as input
+  - for a regulated environment
+  - before a high-stakes meeting
+  - for a multilingual audience
+  - when onboarding a new hire
+  - from a voice memo transcript
+  - for a quarterly planning cycle
+  - for a skeptical executive
+  - with incomplete or conflicting data
+  - for a beginner learning from scratch
+  - at the start of a new project
+  - after a failed launch
+  - for a remote-first team
+  - on a mobile-only workflow
+  - for a small local business
+  - for an enterprise with legacy systems
+  - when cutting costs by half
+  - for an accessibility-focused audience
+  - to prepare for an audit or inspection
+  - for a weekly recurring routine
+  - while handing work over to someone else
+  - for a public announcement
+  - when scaling from ten to a thousand users
+  - using a long PDF as the only source
