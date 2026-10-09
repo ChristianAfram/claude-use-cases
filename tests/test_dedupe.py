@@ -270,6 +270,8 @@ def test_clean_output_accepts(raw, expected):
         ("Write a churn-recovery email for a solo founder.", "wrong_verb"),
         ("Draft: Write a churn-recovery email for a solo founder.", "wrong_verb"),
         ("Drafting a churn-recovery email for a solo founder.", "wrong_verb"),
+        ('Draft "Welcome aboard, here is your first-week plan for the new hire.', "unbalanced_quotes"),
+        ("Draft a churn-recovery email (with a discount for a solo founder.", "unbalanced_quotes"),
         ("Draft a churn email for a founder. Then send it to the team.", "multi_sentence"),
     ],
 )

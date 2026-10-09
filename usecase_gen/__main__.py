@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import random
 import sys
 import time
@@ -23,6 +24,12 @@ log = logging.getLogger("usecase_gen")
 DEFAULT_TAXONOMY = Path(__file__).with_name("taxonomy.yaml")
 # Similarity scales are model-specific: the lexical hash fallback scores rewordings lower than a semantic model.
 DEFAULT_THRESHOLDS = {"http": 0.88, "hash": 0.80}
+# Both speak the OpenAI-compatible API; a provider only changes the defaults.
+PROVIDERS = {
+    "llamacpp": {"llm_url": "http://localhost:8080/v1", "llm_model": "local", "embed_model": "local", "key_env": None},
+    "ollama": {"llm_url": "http://localhost:11434/v1", "llm_model": "qwen2.5:7b", "embed_model": "nomic-embed-text",
+               "key_env": "OLLAMA_API_KEY"},
+}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -32,16 +39,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--lists-dir", type=Path, default=Path.cwd(), help="folder with claude-use-cases*.md (read-only); the new volume is written here")
     p.add_argument("--taxonomy", type=Path, default=DEFAULT_TAXONOMY)
     p.add_argument("--state-dir", type=Path, default=None, help="ledger, embedding cache, run logs (default: <lists-dir>/.usecase_gen)")
-    p.add_argument("--llm-url", default="http://localhost:8080/v1")
-    p.add_argument("--llm-model", default="local")
-    p.add_argument("--api-key", default=None)
+    p.add_argument("--provider", choices=list(PROVIDERS), default="llamacpp",
+                   help="sets URL/model defaults: llamacpp = :8080, ollama = :11434 with qwen2.5:7b + nomic-embed-text")
+    p.add_argument("--llm-url", default=None, help="OpenAI-compatible base URL (default: per --provider)")
+    p.add_argument("--llm-model", default=None, help="chat model name (default: per --provider)")
+    p.add_argument("--api-key", default=None, help="bearer token for --llm-url (ollama: defaults to $OLLAMA_API_KEY)")
     p.add_argument("--temperature", type=float, default=0.9)
     p.add_argument("--max-tokens", type=int, default=120)
     p.add_argument("--embedder", choices=["http", "hash"], default="http",
                    help="http = OpenAI-compatible /embeddings (default); hash = offline lexical fallback")
     p.add_argument("--embed-url", default=None, help="embeddings endpoint (default: --llm-url)")
-    p.add_argument("--embed-model", default="local")
-    p.add_argument("--embed-prefix", default="", help='text prepended before embedding, e.g. "clustering: " for nomic-embed')
+    p.add_argument("--embed-model", default=None, help="embedding model name (default: per --provider)")
+    p.add_argument("--embed-prefix", default=None,
+                   help='text prepended before embedding (default: "clustering: " for nomic models, else none)')
     p.add_argument("--threshold", type=float, default=None,
                    help=f"reject if cosine similarity > this (default {DEFAULT_THRESHOLDS['http']}; hash: {DEFAULT_THRESHOLDS['hash']})")
     p.add_argument("--workers", type=int, default=4, help="parallel LLM requests; match llama-server -np")
@@ -51,6 +61,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = p.parse_args(argv)
     if args.threshold is None:
         args.threshold = DEFAULT_THRESHOLDS[args.embedder]
+    prov = PROVIDERS[args.provider]
+    args.llm_url = args.llm_url or prov["llm_url"]
+    args.llm_model = args.llm_model or prov["llm_model"]
+    args.embed_model = args.embed_model or prov["embed_model"]
+    if args.api_key is None and prov["key_env"]:
+        args.api_key = os.environ.get(prov["key_env"]) or None
+    if args.embed_prefix is None:
+        # nomic-embed only separates paraphrases at 0.88 with a task prefix (see README calibration table).
+        args.embed_prefix = "clustering: " if "nomic" in args.embed_model.lower() else ""
     return args
 
 
@@ -58,7 +77,9 @@ def build_embedder(args: argparse.Namespace, cache_dir: Path) -> CachedEmbedder:
     if args.embedder == "hash":
         inner = HashEmbedder()
     else:
-        inner = HttpEmbedder(OpenAICompatClient(args.embed_url or args.llm_url, args.embed_model, args.api_key),
+        # The key goes only to --llm-url's host: a separate --embed-url never receives it.
+        key = None if args.embed_url else args.api_key
+        inner = HttpEmbedder(OpenAICompatClient(args.embed_url or args.llm_url, args.embed_model, key),
                              prefix=args.embed_prefix)
     return CachedEmbedder(inner, cache_dir)
 

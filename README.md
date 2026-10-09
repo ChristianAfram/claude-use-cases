@@ -17,6 +17,31 @@ llama-server -m nomic-embed-text-v1.5.Q8_0.gguf --port 8081 --embeddings --pooli
 uv run python -m usecase_gen --count 1000 --embed-url http://localhost:8081/v1 --embed-prefix "clustering: "
 ```
 
+### Or with Ollama
+
+```powershell
+ollama pull qwen2.5:7b
+ollama pull nomic-embed-text
+$env:OLLAMA_NUM_PARALLEL = 4   # set before `ollama serve` to match --workers
+uv run python -m usecase_gen --provider ollama --count 1000
+```
+
+`--provider ollama` points both chat and embeddings at `http://localhost:11434/v1`, uses `qwen2.5:7b` +
+`nomic-embed-text`, and adds the `clustering: ` prefix automatically. Override with `--llm-model`,
+`--embed-model`, `--llm-url`. Local Ollama needs **no API key**.
+
+For a hosted, key-protected endpoint (e.g. Ollama Cloud), put the key in an environment variable, never on
+the command line or in a file in this repo, and keep embeddings local so the threshold stays calibrated:
+
+```powershell
+$env:OLLAMA_API_KEY = "<your key>"   # or: setx OLLAMA_API_KEY "<your key>" (new shells)
+uv run python -m usecase_gen --provider ollama --llm-url <hosted /v1 URL> --llm-model <hosted model> `
+  --embed-url http://localhost:11434/v1
+```
+
+The key is sent only to `--llm-url`; a separate `--embed-url` never receives it, and it is never written
+to logs.
+
 Output: `claude-use-cases-volN.md` (N = highest existing volume + 1), numbered from the highest existing
 entry number + 1, with a Contents section and 100 entries per category (categories = taxonomy domains).
 Existing `claude-use-cases*.md` files are only read; the CLI refuses to overwrite any file.
@@ -38,7 +63,9 @@ Existing `claude-use-cases*.md` files are only read; the CLI refuses to overwrit
 | `--count` | 1000 | entries to generate |
 | `--per-category` | 100 | entries per domain section |
 | `--lists-dir` | current dir | where lists are read and the new volume is written |
+| `--provider` | `llamacpp` | `ollama` switches URL/model defaults to Ollama |
 | `--llm-url` / `--embed-url` | `http://localhost:8080/v1` / same | any OpenAI-compatible server |
+| `--api-key` | `$OLLAMA_API_KEY` with `--provider ollama` | bearer token for `--llm-url` |
 | `--threshold` | 0.88 (`hash`: 0.80) | reject if cosine similarity is strictly greater |
 | `--embedder` | `http` | `hash` = offline lexical fallback, catches rewording but not paraphrase |
 | `--workers` | 4 | parallel LLM calls; match `llama-server -np` |
@@ -57,7 +84,8 @@ Existing `claude-use-cases*.md` files are only read; the CLI refuses to overwrit
 | …to a **vendor** about a **delayed shipment**. (different task) | 0.839 | 0.871 kept |
 | Draft a grant proposal budget narrative for a rural health clinic. | 0.506 | 0.660 kept |
 
-With nomic, use `--embed-prefix "clustering: "`. With another model, check a few pairs from your own lists
+Any embedding model whose name contains `nomic` gets `--embed-prefix "clustering: "` automatically
+(pass `--embed-prefix ""` to disable). Ollama's `nomic-embed-text` gives the same numbers (paraphrase 0.900). With another model, check a few pairs from your own lists
 with `--sim` first, then tune `--threshold`. `rejected.jsonl` records the score and nearest match for every
 near-duplicate, which tells you whether the line sits in the right place.
 
@@ -68,7 +96,7 @@ near-duplicate, which tells you whether the line sits in the right place.
 - `runs/<timestamp>/`: `run.log` (rejection counts by reason plus the verification report), `rejected.jsonl`
   (every rejected sentence with its reason, nearest match and score), `accepted.jsonl`, `summary.json`.
 
-Rejection reasons: `llm_error`, `empty`, `too_short`, `too_long`, `wrong_verb`, `multi_sentence`,
+Rejection reasons: `llm_error`, `empty`, `too_short`, `too_long`, `wrong_verb`, `multi_sentence`, `unbalanced_quotes`,
 `exact_dup_existing`, `exact_dup_new`, `near_dup_existing`, `near_dup_new`.
 
 ## Tests
