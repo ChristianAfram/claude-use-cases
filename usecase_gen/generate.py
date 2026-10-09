@@ -132,6 +132,8 @@ def clean_output(raw: str, verb: str) -> tuple[str | None, str]:
         return None, "wrong_verb"
     if re.search(r"[.!?]\s+\S", _ABBREV_RE.sub("", s[:-1])):
         return None, "multi_sentence"
+    if s.count('"') % 2 or s.count("(") != s.count(")"):
+        return None, "unbalanced_quotes"
     return s, ""
 
 

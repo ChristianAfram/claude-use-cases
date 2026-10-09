@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from usecase_gen.__main__ import main
+from usecase_gen.__main__ import build_embedder, main, parse_args
 from usecase_gen.dedupe import normalize, parse_list
 
 EXISTING_NEAR_DUP_TARGET = "Draft the weekly sales pipeline summary for the regional team lead."
@@ -29,6 +29,7 @@ EXISTING_VOL2 = "# Volume 2\n\n## Misc\n\n41. Plan a warehouse layout that cuts 
 
 
 def _stub_vector(text: str) -> list[float]:
+    text = text.removeprefix("clustering: ")
     # Ignores the first word, so "<Verb> the weekly sales pipeline ..." collides with the
     # existing entry: different normalized text (not an exact dup) but cosine 1.0 (near dup).
     rest = " ".join(normalize(text).split()[1:])
@@ -40,6 +41,7 @@ class StubState:
     def __init__(self):
         self.calls = 0
         self.first_by_verb: dict[str, str] = {}
+        self.requests: list[dict] = []
         self.lock = threading.Lock()
 
 
@@ -58,6 +60,9 @@ def make_handler(state: StubState):
 
         def do_POST(self):
             req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            with state.lock:
+                state.requests.append({"path": self.path, "auth": self.headers.get("Authorization"),
+                                       "model": req.get("model"), "input": req.get("input")})
             if self.path.endswith("/embeddings"):
                 data = [{"index": i, "embedding": _stub_vector(t)} for i, t in enumerate(req["input"])]
                 return self._send({"data": data})
@@ -143,3 +148,54 @@ def test_cli_fails_cleanly_when_llm_unreachable(tmp_path: Path):
     run_dir = next((tmp_path / ".usecase_gen" / "runs").iterdir())
     assert "Every LLM call in a wave failed" in (run_dir / "run.log").read_text(encoding="utf-8")
     assert not (tmp_path / "claude-use-cases-vol2.md").exists()
+
+
+# ---------------------------------------------------------------- providers
+
+
+def test_provider_defaults(monkeypatch):
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+    a = parse_args([])
+    assert (a.llm_url, a.llm_model, a.embed_model, a.embed_prefix, a.api_key) == (
+        "http://localhost:8080/v1", "local", "local", "", None)
+
+    monkeypatch.setenv("OLLAMA_API_KEY", "secret-from-env")
+    o = parse_args(["--provider", "ollama"])
+    assert (o.llm_url, o.llm_model, o.embed_model, o.embed_prefix, o.api_key) == (
+        "http://localhost:11434/v1", "qwen2.5:7b", "nomic-embed-text", "clustering: ", "secret-from-env")
+
+    o2 = parse_args(["--provider", "ollama", "--llm-model", "llama3.1:8b", "--embed-model", "mxbai-embed-large",
+                     "--api-key", "explicit"])
+    assert (o2.llm_model, o2.embed_model, o2.embed_prefix, o2.api_key) == (
+        "llama3.1:8b", "mxbai-embed-large", "", "explicit")
+    assert parse_args(["--provider", "ollama", "--embed-prefix", ""]).embed_prefix == ""
+
+
+def test_api_key_not_sent_to_separate_embed_url(tmp_path: Path):
+    args = parse_args(["--provider", "ollama", "--api-key", "k", "--embed-url", "http://other-host:1/v1"])
+    assert build_embedder(args, tmp_path).inner.client.api_key is None
+    args = parse_args(["--provider", "ollama", "--api-key", "k"])
+    assert build_embedder(args, tmp_path).inner.client.api_key == "k"
+
+
+def test_cli_ollama_provider_end_to_end(tmp_path: Path, stub_server, monkeypatch):
+    url, state = stub_server
+    monkeypatch.setenv("OLLAMA_API_KEY", "test-key")
+    (tmp_path / "claude-use-cases.md").write_text(EXISTING, encoding="utf-8")
+
+    rc = main(["--provider", "ollama", "--llm-url", url, "--count", "20", "--per-category", "10",
+               "--lists-dir", str(tmp_path), "--seed", "3"])
+    assert rc == 0
+    assert len(parse_list(tmp_path / "claude-use-cases-vol2.md")) == 20
+
+    chats = [r for r in state.requests if r["path"].endswith("/chat/completions")]
+    embeds = [r for r in state.requests if r["path"].endswith("/embeddings")]
+    assert chats and embeds
+    assert all(r["auth"] == "Bearer test-key" for r in state.requests)
+    assert {r["model"] for r in chats} == {"qwen2.5:7b"}
+    assert {r["model"] for r in embeds} == {"nomic-embed-text"}
+    assert all(t.startswith("clustering: ") for r in embeds for t in r["input"])
+
+    run_dir = next((tmp_path / ".usecase_gen" / "runs").iterdir())
+    for f in run_dir.iterdir():
+        assert "test-key" not in f.read_text(encoding="utf-8")
